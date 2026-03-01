@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
-import { 
-  CupSoda, 
-  Coffee, 
-  IceCream, 
-  Utensils, 
+import {
+  CupSoda,
+  Coffee,
+  IceCream,
+  Utensils,
   ShoppingCart,
   Trash2,
   Loader2,
@@ -13,7 +13,7 @@ import { Product, Category, CartItem } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { db } from '../firebase';
 import ProductImage from '../components/ProductImage';
-import { collection, onSnapshot, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, onSnapshot, addDoc, serverTimestamp, doc, updateDoc, increment } from 'firebase/firestore';
 
 const CATEGORIES: { name: Category; icon: any }[] = [
   { name: 'Bebida', icon: CupSoda },
@@ -63,7 +63,7 @@ export default function POSView() {
     setCart(prev => {
       const existing = prev.find(item => item.id === product.id);
       if (existing) {
-        return prev.map(item => 
+        return prev.map(item =>
           item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item
         );
       }
@@ -77,10 +77,10 @@ export default function POSView() {
     if (cart.length === 0) return;
     setIsConfirming(true);
     console.log('Iniciando confirmación de venta...', cart);
-    
+
     try {
       const total = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-      
+
       // Añadimos un timeout para que no se quede cargando si Firebase no responde
       const salePromise = addDoc(collection(db, 'sales'), {
         items: cart,
@@ -88,12 +88,19 @@ export default function POSView() {
         timestamp: serverTimestamp(),
       });
 
-      const timeoutPromise = new Promise((_, reject) => 
+      // Update product stocks
+      const stockUpdates = cart.map(item =>
+        updateDoc(doc(db, 'products', item.id), {
+          stock: increment(-item.quantity)
+        })
+      );
+
+      const timeoutPromise = new Promise((_, reject) =>
         setTimeout(() => reject(new Error('Tiempo de espera agotado. Revisa tu conexión a Firebase.')), 10000)
       );
 
-      await Promise.race([salePromise, timeoutPromise]);
-      
+      await Promise.race([salePromise, Promise.all(stockUpdates), timeoutPromise]);
+
       console.log('Venta guardada exitosamente en Firebase');
       clearCart();
       alert('¡Venta confirmada exitosamente!');
@@ -144,11 +151,10 @@ export default function POSView() {
             <button
               key={cat.name}
               onClick={() => setSelectedCategory(cat.name)}
-              className={`flex flex-col items-center gap-1 rounded-xl p-3 md:px-4 transition-all border-2 ${
-                selectedCategory === cat.name 
-                  ? 'bg-primary/10 border-primary text-primary' 
+              className={`flex flex-col items-center gap-1 rounded-xl p-3 md:px-4 transition-all border-2 ${selectedCategory === cat.name
+                  ? 'bg-primary/10 border-primary text-primary'
                   : 'bg-white border-transparent text-slate-500 shadow-sm'
-              }`}
+                }`}
             >
               <cat.icon size={20} />
               <span className="text-[10px] font-bold">{cat.name}</span>
@@ -178,7 +184,10 @@ export default function POSView() {
               </div>
               <div className="px-1 pb-1 text-center md:text-left">
                 <p className="text-sm md:text-[15px] font-bold truncate text-slate-800">{product.name}</p>
-                <p className="text-xs md:text-sm text-primary font-bold">${product.price.toLocaleString('es-CO')}</p>
+                <div className="flex items-center justify-between mt-0.5">
+                  <p className="text-xs md:text-sm text-primary font-bold">${product.price.toLocaleString('es-CO')}</p>
+                  <p className="text-[10px] md:text-xs text-slate-500 font-medium">Stock: {product.stock || 0}</p>
+                </div>
               </div>
             </motion.button>
           ))}
@@ -188,7 +197,7 @@ export default function POSView() {
       {/* Cart Summary Floating */}
       <AnimatePresence>
         {cart.length > 0 && (
-          <motion.div 
+          <motion.div
             initial={{ y: 100, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: 100, opacity: 0 }}
@@ -201,7 +210,7 @@ export default function POSView() {
                   <span className="text-sm font-bold text-slate-700">Carrito de Venta</span>
                   <span className="bg-primary/20 text-primary text-[10px] font-black px-1.5 py-0.5 rounded-md">{itemCount}</span>
                 </div>
-                <button 
+                <button
                   onClick={clearCart}
                   className="text-[10px] text-red-500 font-black uppercase tracking-widest flex items-center gap-1"
                 >
@@ -212,7 +221,7 @@ export default function POSView() {
                 <span className="text-base font-bold text-slate-500">Total</span>
                 <span className="text-2xl md:text-3xl font-black text-primary">${total.toLocaleString('es-CO')}</span>
               </div>
-              <button 
+              <button
                 onClick={confirmSale}
                 disabled={isConfirming}
                 className="w-full md:w-auto md:min-w-[220px] rounded-xl bg-primary py-4 px-6 text-center text-slate-900 font-black text-lg active:scale-[0.98] transition-all shadow-lg shadow-primary/20 disabled:opacity-50 flex items-center justify-center gap-2"

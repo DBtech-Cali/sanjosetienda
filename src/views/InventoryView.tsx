@@ -1,9 +1,9 @@
 import { useState, useEffect, FormEvent } from 'react';
-import { 
-  Calendar, 
-  Tag, 
-  Hash, 
-  DollarSign, 
+import {
+  Calendar,
+  Tag,
+  Hash,
+  DollarSign,
   PlusCircle,
   ChevronRight,
   PenLine,
@@ -15,15 +15,17 @@ import {
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { db } from '../firebase';
-import { collection, onSnapshot, addDoc, serverTimestamp, query, orderBy, limit, doc, updateDoc } from 'firebase/firestore';
+import { collection, onSnapshot, addDoc, serverTimestamp, query, orderBy, limit, doc, updateDoc, increment } from 'firebase/firestore';
 import { PurchaseRecord } from '../types';
 
 export default function InventoryView() {
+  const [productId, setProductId] = useState('');
   const [name, setName] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [quantity, setQuantity] = useState<number>(0);
   const [unitCost, setUnitCost] = useState<number>(0);
   const [recentEntries, setRecentEntries] = useState<PurchaseRecord[]>([]);
+  const [products, setProducts] = useState<import('../types').Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [editingEntry, setEditingEntry] = useState<PurchaseRecord | null>(null);
@@ -37,54 +39,103 @@ export default function InventoryView() {
     }, 20000);
 
     const q = query(collection(db, 'purchases'), orderBy('timestamp', 'desc'), limit(10));
-    const unsub = onSnapshot(
+    const unsubPurchases = onSnapshot(
       q,
       (snapshot) => {
-        clearTimeout(timeoutId);
         const entries = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as PurchaseRecord));
         setRecentEntries(entries);
-        setLoading(false);
         setFirestoreError(null);
       },
       (err) => {
-        clearTimeout(timeoutId);
         console.error('Firestore purchases:', err);
+        setFirestoreError(err.message || 'Error al conectar con Firestore.');
+      }
+    );
+
+    const unsubProducts = onSnapshot(
+      collection(db, 'products'),
+      (snapshot) => {
+        clearTimeout(timeoutId);
+        const prods = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as import('../types').Product));
+        setProducts(prods);
+        setLoading(false);
+      },
+      (err) => {
+        clearTimeout(timeoutId);
+        console.error('Firestore products:', err);
         setLoading(false);
         setFirestoreError(err.message || 'Error al conectar con Firestore.');
       }
     );
+
     return () => {
       clearTimeout(timeoutId);
-      unsub();
+      unsubPurchases();
+      unsubProducts();
     };
   }, [retryCount]);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!name || quantity <= 0 || unitCost <= 0) return;
-    
+    if (!productId || quantity <= 0 || unitCost <= 0) return;
+
+    // Find selected product name
+    const selectedProduct = products.find(p => p.id === productId);
+    const productName = selectedProduct ? selectedProduct.name : name;
+
     setIsSubmitting(true);
     try {
       const totalCost = quantity * unitCost;
+
       if (editingEntry) {
+        // Compute the difference to adjust the stock correctly
+        const quantityDiff = quantity - editingEntry.quantity;
+
         await updateDoc(doc(db, 'purchases', editingEntry.id), {
-          name,
+          productId,
+          name: productName,
           date,
           quantity,
           unitCost,
           totalCost,
         });
+
+        // Update product stock if the product ID is the same
+        if (editingEntry.productId === productId && quantityDiff !== 0) {
+          await updateDoc(doc(db, 'products', productId), {
+            stock: increment(quantityDiff)
+          });
+        } else if (editingEntry.productId !== productId) {
+          // Revert old product stock, increment new product stock
+          if (editingEntry.productId) {
+            await updateDoc(doc(db, 'products', editingEntry.productId), {
+              stock: increment(-editingEntry.quantity)
+            });
+          }
+          await updateDoc(doc(db, 'products', productId), {
+            stock: increment(quantity)
+          });
+        }
+
         setEditingEntry(null);
       } else {
         await addDoc(collection(db, 'purchases'), {
-          name,
+          productId,
+          name: productName,
           date,
           quantity,
           unitCost,
           totalCost,
           timestamp: serverTimestamp(),
         });
+
+        // Update product stock
+        await updateDoc(doc(db, 'products', productId), {
+          stock: increment(quantity)
+        });
       }
+
+      setProductId('');
       setName('');
       setQuantity(0);
       setUnitCost(0);
@@ -97,6 +148,7 @@ export default function InventoryView() {
 
   const startEdit = (entry: PurchaseRecord) => {
     setEditingEntry(entry);
+    setProductId(entry.productId || '');
     setName(entry.name);
     setDate(entry.date);
     setQuantity(entry.quantity);
@@ -136,17 +188,26 @@ export default function InventoryView() {
 
       <form onSubmit={handleSubmit} className="space-y-4 md:space-y-5 py-4 md:py-6 max-w-3xl">
         <div className="flex flex-col w-full">
-          <label className="text-slate-700 text-sm font-semibold pb-1.5 ml-1">Nombre del Artículo</label>
+          <label className="text-slate-700 text-sm font-semibold pb-1.5 ml-1">Producto</label>
           <div className="relative">
             <Tag className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
-            <input 
+            <select
               required
-              className="block w-full pl-12 pr-4 py-4 rounded-xl border-none bg-white shadow-sm focus:ring-2 focus:ring-primary text-base placeholder:text-slate-300" 
-              placeholder="Ej. Cuadernos, Esferos..." 
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
+              className="block w-full pl-12 pr-4 py-4 rounded-xl border border-slate-200 bg-white shadow-sm focus:ring-2 focus:ring-primary text-base appearance-none cursor-pointer"
+              value={productId}
+              onChange={(e) => {
+                setProductId(e.target.value);
+                const p = products.find(prod => prod.id === e.target.value);
+                if (p) setName(p.name);
+              }}
+            >
+              <option value="" disabled>Seleccione un producto...</option>
+              {products.map(p => (
+                <option key={p.id} value={p.id}>
+                  {p.name} (Stock: {p.stock || 0})
+                </option>
+              ))}
+            </select>
           </div>
         </div>
 
@@ -154,10 +215,10 @@ export default function InventoryView() {
           <label className="text-slate-700 text-sm font-semibold pb-1.5 ml-1">Fecha de Compra</label>
           <div className="relative">
             <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
-            <input 
+            <input
               required
-              className="block w-full pl-12 pr-4 py-4 rounded-xl border-none bg-white shadow-sm focus:ring-2 focus:ring-primary text-base" 
-              type="date" 
+              className="block w-full pl-12 pr-4 py-4 rounded-xl border-none bg-white shadow-sm focus:ring-2 focus:ring-primary text-base"
+              type="date"
               value={date}
               onChange={(e) => setDate(e.target.value)}
             />
@@ -169,10 +230,10 @@ export default function InventoryView() {
             <label className="text-slate-700 text-sm font-semibold pb-1.5 ml-1">Cantidad</label>
             <div className="relative">
               <Hash className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-              <input 
+              <input
                 required
-                className="block w-full pl-10 pr-4 py-4 rounded-xl border-none bg-white shadow-sm focus:ring-2 focus:ring-primary text-base text-center font-bold" 
-                placeholder="0" 
+                className="block w-full pl-10 pr-4 py-4 rounded-xl border-none bg-white shadow-sm focus:ring-2 focus:ring-primary text-base text-center font-bold"
+                placeholder="0"
                 type="number"
                 value={quantity || ''}
                 onChange={(e) => setQuantity(Number(e.target.value))}
@@ -183,10 +244,10 @@ export default function InventoryView() {
             <label className="text-slate-700 text-sm font-semibold pb-1.5 ml-1">Costo Unitario (COP)</label>
             <div className="relative">
               <DollarSign className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-              <input 
+              <input
                 required
-                className="block w-full pl-10 pr-4 py-4 rounded-xl border-none bg-white shadow-sm focus:ring-2 focus:ring-primary text-base font-bold" 
-                placeholder="0" 
+                className="block w-full pl-10 pr-4 py-4 rounded-xl border-none bg-white shadow-sm focus:ring-2 focus:ring-primary text-base font-bold"
+                placeholder="0"
                 type="number"
                 value={unitCost || ''}
                 onChange={(e) => setUnitCost(Number(e.target.value))}
@@ -202,10 +263,11 @@ export default function InventoryView() {
 
         <div className="flex gap-2">
           {editingEntry && (
-            <button 
+            <button
               type="button"
               onClick={() => {
                 setEditingEntry(null);
+                setProductId('');
                 setName('');
                 setQuantity(0);
                 setUnitCost(0);
@@ -215,7 +277,7 @@ export default function InventoryView() {
               Cancelar
             </button>
           )}
-          <button 
+          <button
             type="submit"
             disabled={isSubmitting}
             className="flex-[2] bg-primary hover:bg-primary/90 text-slate-900 font-bold py-4 rounded-xl shadow-lg shadow-primary/20 transition-all flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50"
@@ -233,7 +295,7 @@ export default function InventoryView() {
             Ver Todo <ChevronRight size={14} />
           </button>
         </div>
-        
+
         {loading ? (
           <div className="flex justify-center py-8">
             <Loader2 className="animate-spin text-primary" size={32} />
@@ -256,7 +318,7 @@ export default function InventoryView() {
                     <p className="font-bold text-sm text-slate-900">${entry.totalCost.toLocaleString('es-CO')}</p>
                     <p className="text-[10px] text-slate-400">${entry.unitCost.toLocaleString('es-CO')} c/u</p>
                   </div>
-                  <button 
+                  <button
                     onClick={() => startEdit(entry)}
                     className="p-2 text-slate-400 hover:text-primary transition-colors"
                   >

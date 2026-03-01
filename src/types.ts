@@ -6,6 +6,7 @@ export interface Product {
   price: number;
   category: Category;
   icon: string;
+  stock?: number;
 }
 
 export interface CartItem extends Product {
@@ -14,6 +15,7 @@ export interface CartItem extends Product {
 
 export interface PurchaseRecord {
   id: string;
+  productId: string;
   name: string;
   date: string;
   quantity: number;

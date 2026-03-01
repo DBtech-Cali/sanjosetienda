@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
-import { 
-  TrendingUp, 
-  TrendingDown, 
-  DollarSign, 
-  Package, 
+import {
+  TrendingUp,
+  TrendingDown,
+  DollarSign,
+  Package,
   BookOpen,
   Utensils,
   BarChart2,
@@ -15,7 +15,12 @@ import { collection, onSnapshot, query, where, Timestamp } from 'firebase/firest
 import { SaleRecord, PurchaseRecord } from '../types';
 
 export default function ReportsView() {
-  const [viewType, setViewType] = useState<'daily' | 'monthly'>('daily');
+  const [viewType, setViewType] = useState<'daily' | 'monthly' | 'global'>('daily');
+  const [selectedMonth, setSelectedMonth] = useState(() => {
+    const now = new Date();
+    // Default to current month: YYYY-MM
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  });
   const [sales, setSales] = useState<SaleRecord[]>([]);
   const [purchases, setPurchases] = useState<PurchaseRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -29,21 +34,31 @@ export default function ReportsView() {
     }, 20000);
 
     const now = new Date();
-    let startOfPeriod: Date;
+    let startOfPeriod: Date | null = null;
+    let endOfPeriod: Date | null = null;
+
     if (viewType === 'daily') {
       startOfPeriod = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    } else {
-      startOfPeriod = new Date(now.getFullYear(), now.getMonth(), 1);
+    } else if (viewType === 'monthly') {
+      const [year, month] = selectedMonth.split('-');
+      startOfPeriod = new Date(Number(year), Number(month) - 1, 1);
+      endOfPeriod = new Date(Number(year), Number(month), 0, 23, 59, 59); // end of that month
     }
 
-    const salesQuery = query(
-      collection(db, 'sales'),
-      where('timestamp', '>=', Timestamp.fromDate(startOfPeriod))
-    );
-    const purchasesQuery = query(
-      collection(db, 'purchases'),
-      where('timestamp', '>=', Timestamp.fromDate(startOfPeriod))
-    );
+    let salesQuery = query(collection(db, 'sales'));
+    let purchasesQuery = query(collection(db, 'purchases'));
+
+    if (viewType !== 'global' && startOfPeriod) {
+      let fbStart = Timestamp.fromDate(startOfPeriod);
+      if (endOfPeriod) {
+        let fbEnd = Timestamp.fromDate(endOfPeriod);
+        salesQuery = query(collection(db, 'sales'), where('timestamp', '>=', fbStart), where('timestamp', '<=', fbEnd));
+        purchasesQuery = query(collection(db, 'purchases'), where('timestamp', '>=', fbStart), where('timestamp', '<=', fbEnd));
+      } else {
+        salesQuery = query(collection(db, 'sales'), where('timestamp', '>=', fbStart));
+        purchasesQuery = query(collection(db, 'purchases'), where('timestamp', '>=', fbStart));
+      }
+    }
 
     const unsubSales = onSnapshot(
       salesQuery,
@@ -128,25 +143,42 @@ export default function ReportsView() {
       </div>
 
       {/* View Toggle */}
-      <div className="flex py-4">
-        <div className="flex h-12 flex-1 items-center justify-center rounded-xl bg-primary/10 p-1.5 border border-primary/10">
-          <button 
+      <div className="flex flex-col py-4 gap-3">
+        <div className="flex h-12 flex-1 items-center justify-center rounded-xl bg-primary/10 p-1.5 border border-primary/10 overflow-x-auto no-scrollbar">
+          <button
             onClick={() => setViewType('daily')}
-            className={`flex flex-1 items-center justify-center rounded-lg h-full text-sm font-bold transition-all ${
-              viewType === 'daily' ? 'bg-white shadow-sm text-primary' : 'text-slate-500'
-            }`}
+            className={`flex flex-1 min-w-max px-3 items-center justify-center rounded-lg h-full text-[13px] md:text-sm font-bold transition-all ${viewType === 'daily' ? 'bg-white shadow-sm text-primary' : 'text-slate-500'
+              }`}
           >
-            Vista Diaria
+            Diaria
           </button>
-          <button 
+          <button
             onClick={() => setViewType('monthly')}
-            className={`flex flex-1 items-center justify-center rounded-lg h-full text-sm font-bold transition-all ${
-              viewType === 'monthly' ? 'bg-white shadow-sm text-primary' : 'text-slate-500'
-            }`}
+            className={`flex flex-1 min-w-max px-3 items-center justify-center rounded-lg h-full text-[13px] md:text-sm font-bold transition-all ${viewType === 'monthly' ? 'bg-white shadow-sm text-primary' : 'text-slate-500'
+              }`}
           >
-            Vista Mensual
+            Mensual
+          </button>
+          <button
+            onClick={() => setViewType('global')}
+            className={`flex flex-1 min-w-max px-3 items-center justify-center rounded-lg h-full text-[13px] md:text-sm font-bold transition-all ${viewType === 'global' ? 'bg-white shadow-sm text-primary' : 'text-slate-500'
+              }`}
+          >
+            Global
           </button>
         </div>
+
+        {viewType === 'monthly' && (
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-bold text-slate-700">Seleccionar Mes:</span>
+            <input
+              type="month"
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(e.target.value)}
+              className="px-3 py-2 rounded-lg border border-slate-200 bg-white shadow-sm focus:ring-2 focus:ring-primary text-sm font-medium"
+            />
+          </div>
+        )}
       </div>
 
       {/* Summary Cards */}
