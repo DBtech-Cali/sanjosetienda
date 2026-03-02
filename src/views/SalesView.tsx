@@ -191,7 +191,7 @@ export default function SalesView() {
               className="flex items-center gap-2 p-3 bg-white rounded-xl border border-slate-100"
             >
               <div className="w-10 h-10 rounded-lg overflow-hidden shrink-0 bg-slate-100">
-                <ProductImage productName={item.name} className="w-full h-full rounded-lg" />
+                <ProductImage productName={item.name} imageUrl={item.imageUrl} className="w-full h-full rounded-lg" />
               </div>
               <div className="flex-1 min-w-0">
                 <p className="font-medium text-slate-900 truncate">{item.name}</p>
@@ -280,7 +280,7 @@ export default function SalesView() {
           {selectedSale.items.map((item, i) => (
             <div key={i} className="flex items-center gap-3 p-3 bg-white rounded-xl border border-slate-100">
               <div className="w-10 h-10 rounded-lg overflow-hidden shrink-0 bg-slate-100">
-                <ProductImage productName={item.name} className="w-full h-full rounded-lg" />
+                <ProductImage productName={item.name} imageUrl={item.imageUrl} className="w-full h-full rounded-lg" />
               </div>
               <div className="flex-1 min-w-0">
                 <p className="font-medium text-slate-900">{item.name}</p>

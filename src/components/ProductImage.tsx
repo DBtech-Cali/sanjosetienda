@@ -5,10 +5,12 @@ interface ProductImageProps {
   productName: string;
   className?: string;
   alt?: string;
+  imageUrl?: string;
 }
 
-export default function ProductImage({ productName, className = '', alt }: ProductImageProps) {
-  const url = getProductImageUrl(productName);
+export default function ProductImage({ productName, className = '', alt, imageUrl }: ProductImageProps) {
+  // Priority: custom imageUrl > hardcoded map > fallback icon
+  const url = imageUrl || getProductImageUrl(productName);
   const resolvedAlt = alt ?? productName;
 
   if (url) {

@@ -152,8 +152,8 @@ export default function POSView() {
               key={cat.name}
               onClick={() => setSelectedCategory(cat.name)}
               className={`flex flex-col items-center gap-1 rounded-xl p-3 md:px-4 transition-all border-2 ${selectedCategory === cat.name
-                  ? 'bg-primary/10 border-primary text-primary'
-                  : 'bg-white border-transparent text-slate-500 shadow-sm'
+                ? 'bg-primary/10 border-primary text-primary'
+                : 'bg-white border-transparent text-slate-500 shadow-sm'
                 }`}
             >
               <cat.icon size={20} />
@@ -180,7 +180,7 @@ export default function POSView() {
               className="group relative flex flex-col gap-2 overflow-hidden rounded-xl bg-white p-2 shadow-sm border border-slate-200 transition-all"
             >
               <div className="aspect-square w-full rounded-lg overflow-hidden bg-slate-100">
-                <ProductImage productName={product.name} className="w-full h-full rounded-lg" />
+                <ProductImage productName={product.name} imageUrl={product.imageUrl} className="w-full h-full rounded-lg" />
               </div>
               <div className="px-1 pb-1 text-center md:text-left">
                 <p className="text-sm md:text-[15px] font-bold truncate text-slate-800">{product.name}</p>

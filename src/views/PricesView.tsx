@@ -1,17 +1,19 @@
 import { useState, useEffect } from 'react';
-import { 
-  Search, 
-  Edit3, 
-  Droplets, 
-  Utensils, 
-  IceCream, 
+import {
+  Search,
+  Edit3,
+  Droplets,
+  Utensils,
+  IceCream,
   Coffee,
   X,
   Plus,
   Trash2,
   Loader2,
   Save,
-  RefreshCw
+  RefreshCw,
+  ImageIcon,
+  Link
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { db } from '../firebase';
@@ -27,6 +29,7 @@ export default function PricesView() {
   const [editPrice, setEditPrice] = useState('');
   const [editCategory, setEditCategory] = useState<Category>('Bebida');
   const [search, setSearch] = useState('');
+  const [editImageUrl, setEditImageUrl] = useState('');
   const [isAdding, setIsAdding] = useState(false);
   const [firestoreError, setFirestoreError] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
@@ -63,19 +66,21 @@ export default function PricesView() {
     setEditName(product.name);
     setEditPrice(product.price.toString());
     setEditCategory(product.category);
+    setEditImageUrl(product.imageUrl || '');
     setIsAdding(false);
   };
 
   const saveProduct = async () => {
     if (!editName || !editPrice) return;
-    
+
     try {
-      const data = {
+      const data: any = {
         name: editName,
         price: Number(editPrice),
         category: editCategory,
-        icon: editCategory === 'Bebida' ? 'CupSoda' : 
-              editCategory === 'Dulces' ? 'IceCream' : 'Utensils'
+        icon: editCategory === 'Bebida' ? 'CupSoda' :
+          editCategory === 'Dulces' ? 'IceCream' : 'Utensils',
+        imageUrl: editImageUrl.trim() || '',
       };
 
       if (isAdding) {
@@ -85,9 +90,10 @@ export default function PricesView() {
         await updateDoc(doc(db, 'products', editingId), data);
         setEditingId(null);
       }
-      
+
       setEditName('');
       setEditPrice('');
+      setEditImageUrl('');
     } catch (error) {
       console.error('Error saving product:', error);
     }
@@ -103,7 +109,7 @@ export default function PricesView() {
     }
   };
 
-  const filteredProducts = products.filter(p => 
+  const filteredProducts = products.filter(p =>
     p.name.toLowerCase().includes(search.toLowerCase())
   );
 
@@ -145,20 +151,21 @@ export default function PricesView() {
           <div className="absolute left-4 top-1/2 -translate-y-1/2 text-primary">
             <Search size={20} />
           </div>
-          <input 
-            className="w-full h-12 pl-12 pr-4 rounded-xl border-none bg-primary/10 text-slate-900 placeholder:text-primary/60 focus:ring-2 focus:ring-primary" 
-            placeholder="Buscar producto..." 
+          <input
+            className="w-full h-12 pl-12 pr-4 rounded-xl border-none bg-primary/10 text-slate-900 placeholder:text-primary/60 focus:ring-2 focus:ring-primary"
+            placeholder="Buscar producto..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-        <button 
+        <button
           onClick={() => {
             setIsAdding(true);
             setEditingId(null);
             setEditName('');
             setEditPrice('');
             setEditCategory('Bebida');
+            setEditImageUrl('');
           }}
           className="bg-primary text-slate-900 size-12 md:size-12 rounded-xl flex items-center justify-center shadow-md active:scale-95 self-start"
         >
@@ -181,7 +188,7 @@ export default function PricesView() {
       {/* Add/Edit Form */}
       <AnimatePresence>
         {(isAdding || editingId) && (
-          <motion.div 
+          <motion.div
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
@@ -189,21 +196,21 @@ export default function PricesView() {
           >
             <h4 className="text-sm font-bold mb-3 text-slate-700">{isAdding ? 'Nuevo Producto' : 'Editar Producto'}</h4>
             <div className="space-y-3">
-              <input 
-                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2 text-sm focus:ring-primary" 
+              <input
+                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2 text-sm focus:ring-primary"
                 placeholder="Nombre del producto"
                 value={editName}
                 onChange={(e) => setEditName(e.target.value)}
               />
               <div className="flex gap-2">
-                <input 
-                  className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-4 py-2 text-sm focus:ring-primary" 
+                <input
+                  className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-4 py-2 text-sm focus:ring-primary"
                   placeholder="Precio"
                   type="number"
                   value={editPrice}
                   onChange={(e) => setEditPrice(e.target.value)}
                 />
-                <select 
+                <select
                   className="bg-slate-50 border border-slate-200 rounded-lg px-4 py-2 text-sm focus:ring-primary"
                   value={editCategory}
                   onChange={(e) => setEditCategory(e.target.value as Category)}
@@ -214,14 +221,38 @@ export default function PricesView() {
                   <option value="Sal">Sal</option>
                 </select>
               </div>
+              <div className="flex items-start gap-2">
+                <div className="relative flex-1">
+                  <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+                    <Link size={14} />
+                  </div>
+                  <input
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-8 pr-4 py-2 text-sm focus:ring-primary"
+                    placeholder="URL de la imagen (opcional)"
+                    type="url"
+                    value={editImageUrl}
+                    onChange={(e) => setEditImageUrl(e.target.value)}
+                  />
+                </div>
+                {editImageUrl.trim() && (
+                  <div className="w-10 h-10 rounded-lg overflow-hidden border border-slate-200 shrink-0 bg-slate-100">
+                    <img
+                      src={editImageUrl.trim()}
+                      alt="Preview"
+                      className="w-full h-full object-cover"
+                      onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                    />
+                  </div>
+                )}
+              </div>
               <div className="flex gap-2 pt-2">
-                <button 
+                <button
                   onClick={saveProduct}
                   className="flex-1 bg-primary text-slate-900 py-2 rounded-lg font-bold text-sm flex items-center justify-center gap-2"
                 >
                   <Save size={16} /> Guardar
                 </button>
-                <button 
+                <button
                   onClick={() => { setIsAdding(false); setEditingId(null); }}
                   className="px-4 bg-slate-100 text-slate-500 py-2 rounded-lg font-bold text-sm"
                 >
@@ -244,7 +275,7 @@ export default function PricesView() {
           <div key={product.id} className="bg-white p-4 md:p-5 rounded-xl shadow-sm border border-slate-100 flex items-center justify-between gap-4">
             <div className="flex items-center gap-3 md:gap-4">
               <div className="w-12 h-12 md:w-14 md:h-14 rounded-lg overflow-hidden shrink-0 bg-slate-100">
-                <ProductImage productName={product.name} className="w-full h-full rounded-lg" />
+                <ProductImage productName={product.name} imageUrl={product.imageUrl} className="w-full h-full rounded-lg" />
               </div>
               <div>
                 <p className="font-bold text-slate-900 text-sm md:text-base">{product.name}</p>
@@ -254,14 +285,14 @@ export default function PricesView() {
             <div className="flex items-center gap-4 md:gap-6">
               <div className="text-right">
                 <p className="text-sm md:text-base font-bold text-slate-900">${product.price.toLocaleString('es-CO')}</p>
-                <button 
+                <button
                   onClick={() => startEditing(product)}
                   className="mt-1 text-xs font-bold text-primary flex items-center justify-end gap-1 hover:underline"
                 >
                   <Edit3 size={12} /> Editar
                 </button>
               </div>
-              <button 
+              <button
                 onClick={() => deleteProduct(product.id)}
                 className="text-slate-300 hover:text-red-500 transition-colors"
               >
