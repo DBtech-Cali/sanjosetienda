@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   TrendingUp,
   TrendingDown,
@@ -8,11 +8,39 @@ import {
   Utensils,
   BarChart2,
   Loader2,
-  RefreshCw
+  RefreshCw,
+  Calendar
 } from 'lucide-react';
 import { db } from '../firebase';
 import { collection, onSnapshot, query, where, Timestamp } from 'firebase/firestore';
 import { SaleRecord, PurchaseRecord } from '../types';
+
+function recordToDate(ts: unknown): Date | null {
+  if (ts == null) return null;
+  const t = ts as { toDate?: () => Date };
+  if (typeof t.toDate === 'function') return t.toDate();
+  return null;
+}
+
+function localDayKey(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function saleDayKey(s: SaleRecord): string | null {
+  const d = recordToDate(s.timestamp);
+  if (d) return localDayKey(d);
+  return null;
+}
+
+function purchaseDayKey(p: PurchaseRecord): string | null {
+  const d = recordToDate(p.timestamp);
+  if (d) return localDayKey(d);
+  if (typeof p.date === 'string' && p.date.length >= 10) return p.date.slice(0, 10);
+  return null;
+}
 
 export default function ReportsView() {
   const [viewType, setViewType] = useState<'daily' | 'monthly' | 'global'>('daily');
@@ -26,6 +54,10 @@ export default function ReportsView() {
   const [loading, setLoading] = useState(true);
   const [firestoreError, setFirestoreError] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
+  const [globalPickDay, setGlobalPickDay] = useState(() => {
+    const n = new Date();
+    return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
+  });
 
   useEffect(() => {
     const timeoutId = setTimeout(() => {
@@ -40,9 +72,9 @@ export default function ReportsView() {
     if (viewType === 'daily') {
       startOfPeriod = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     } else if (viewType === 'monthly') {
-      const [year, month] = selectedMonth.split('-');
-      startOfPeriod = new Date(Number(year), Number(month) - 1, 1);
-      endOfPeriod = new Date(Number(year), Number(month), 0, 23, 59, 59); // end of that month
+      const [year, month] = selectedMonth.split('-').map(Number);
+      startOfPeriod = new Date(year, month - 1, 1);
+      endOfPeriod = new Date(year, month, 0, 23, 59, 59, 999);
     }
 
     let salesQuery = query(collection(db, 'sales'));
@@ -90,7 +122,7 @@ export default function ReportsView() {
       unsubSales();
       unsubPurchases();
     };
-  }, [viewType, retryCount]);
+  }, [viewType, selectedMonth, retryCount]);
 
   const totalSales = sales.reduce((sum, s) => sum + s.total, 0);
   const totalPurchases = purchases.reduce((sum, p) => sum + p.totalCost, 0);
@@ -109,6 +141,56 @@ export default function ReportsView() {
   const sortedCategories = Object.entries(categoryStats)
     .sort(([, a]: any, [, b]: any) => b.total - a.total)
     .slice(0, 5);
+
+  const globalMonthRows = useMemo(() => {
+    if (viewType !== 'global') return [];
+    const map = new Map<string, { ventas: number; gastos: number }>();
+    for (const s of sales) {
+      const dk = saleDayKey(s);
+      if (!dk) continue;
+      const mk = dk.slice(0, 7);
+      const row = map.get(mk) ?? { ventas: 0, gastos: 0 };
+      row.ventas += s.total;
+      map.set(mk, row);
+    }
+    for (const p of purchases) {
+      const dk = purchaseDayKey(p);
+      if (!dk) continue;
+      const mk = dk.slice(0, 7);
+      const row = map.get(mk) ?? { ventas: 0, gastos: 0 };
+      row.gastos += p.totalCost;
+      map.set(mk, row);
+    }
+    return [...map.entries()]
+      .map(([monthKey, v]) => ({
+        monthKey,
+        ventas: v.ventas,
+        gastos: v.gastos,
+        utilidad: v.ventas - v.gastos,
+      }))
+      .sort((a, b) => b.monthKey.localeCompare(a.monthKey));
+  }, [viewType, sales, purchases]);
+
+  const globalDayStats = useMemo(() => {
+    if (viewType !== 'global' || !globalPickDay) return null;
+    let ventas = 0;
+    let gastos = 0;
+    for (const s of sales) {
+      if (saleDayKey(s) === globalPickDay) ventas += s.total;
+    }
+    for (const p of purchases) {
+      if (purchaseDayKey(p) === globalPickDay) gastos += p.totalCost;
+    }
+    return { ventas, gastos, utilidad: ventas - gastos };
+  }, [viewType, globalPickDay, sales, purchases]);
+
+  const selectedMonthLabel =
+    viewType === 'monthly'
+      ? (() => {
+          const [y, m] = selectedMonth.split('-').map(Number);
+          return new Date(y, m - 1, 1).toLocaleDateString('es-CO', { month: 'long', year: 'numeric' });
+        })()
+      : '';
 
   if (loading) {
     return (
@@ -169,14 +251,59 @@ export default function ReportsView() {
         </div>
 
         {viewType === 'monthly' && (
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-bold text-slate-700">Seleccionar Mes:</span>
+          <div className="flex flex-col gap-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-sm font-bold text-slate-700">Mes a consultar:</span>
+              <input
+                type="month"
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(e.target.value)}
+                className="px-3 py-2 rounded-lg border border-slate-200 bg-white shadow-sm focus:ring-2 focus:ring-primary text-sm font-medium"
+              />
+            </div>
+            <p className="text-xs text-slate-500 capitalize">Mostrando: {selectedMonthLabel}</p>
+          </div>
+        )}
+
+        {viewType === 'global' && (
+          <div className="flex flex-col gap-2 rounded-xl border border-primary/15 bg-primary/5 p-4">
+            <div className="flex items-center gap-2 text-slate-800">
+              <Calendar size={18} className="text-primary shrink-0" />
+              <span className="text-sm font-bold">Consultar un día concreto</span>
+            </div>
+            <p className="text-xs text-slate-600">
+              Elija la fecha para ver ventas, gastos y utilidad solo de ese día (sobre el historial completo cargado).
+            </p>
             <input
-              type="month"
-              value={selectedMonth}
-              onChange={(e) => setSelectedMonth(e.target.value)}
-              className="px-3 py-2 rounded-lg border border-slate-200 bg-white shadow-sm focus:ring-2 focus:ring-primary text-sm font-medium"
+              type="date"
+              value={globalPickDay}
+              onChange={(e) => setGlobalPickDay(e.target.value)}
+              className="max-w-xs px-3 py-2 rounded-lg border border-slate-200 bg-white shadow-sm focus:ring-2 focus:ring-primary text-sm font-medium"
             />
+            {globalDayStats && (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-2">
+                <div className="rounded-lg bg-white border border-slate-100 p-3 shadow-sm">
+                  <p className="text-[10px] font-bold uppercase text-slate-400">Ventas del día</p>
+                  <p className="text-lg font-extrabold text-slate-900">
+                    ${globalDayStats.ventas.toLocaleString('es-CO')}
+                  </p>
+                </div>
+                <div className="rounded-lg bg-white border border-slate-100 p-3 shadow-sm">
+                  <p className="text-[10px] font-bold uppercase text-slate-400">Gastos del día</p>
+                  <p className="text-lg font-extrabold text-slate-900">
+                    ${globalDayStats.gastos.toLocaleString('es-CO')}
+                  </p>
+                </div>
+                <div className="rounded-lg bg-white border border-slate-100 p-3 shadow-sm">
+                  <p className="text-[10px] font-bold uppercase text-slate-400">Utilidad del día</p>
+                  <p
+                    className={`text-lg font-extrabold ${globalDayStats.utilidad >= 0 ? 'text-green-600' : 'text-red-600'}`}
+                  >
+                    ${globalDayStats.utilidad.toLocaleString('es-CO')}
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -221,6 +348,58 @@ export default function ReportsView() {
           </div>
         </div>
       </div>
+
+      {viewType === 'global' && globalMonthRows.length > 0 && (
+        <div className="mt-6 max-w-4xl">
+          <h3 className="text-slate-900 text-lg font-bold mb-3">Consolidado por mes</h3>
+          <div className="bg-white rounded-xl border border-primary/5 shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-slate-50 text-left text-slate-500 text-xs font-bold uppercase tracking-wide">
+                    <th className="px-4 py-3">Mes</th>
+                    <th className="px-4 py-3 text-right">Ventas</th>
+                    <th className="px-4 py-3 text-right">Gastos</th>
+                    <th className="px-4 py-3 text-right">Utilidad</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {globalMonthRows.map((row) => {
+                    const [y, m] = row.monthKey.split('-').map(Number);
+                    const label = new Date(y, m - 1, 1).toLocaleDateString('es-CO', {
+                      month: 'long',
+                      year: 'numeric',
+                    });
+                    return (
+                      <tr key={row.monthKey} className="border-t border-slate-100">
+                        <td className="px-4 py-3 font-medium text-slate-800 capitalize">{label}</td>
+                        <td className="px-4 py-3 text-right font-semibold text-slate-900">
+                          ${row.ventas.toLocaleString('es-CO')}
+                        </td>
+                        <td className="px-4 py-3 text-right font-semibold text-slate-900">
+                          ${row.gastos.toLocaleString('es-CO')}
+                        </td>
+                        <td
+                          className={`px-4 py-3 text-right font-bold ${row.utilidad >= 0 ? 'text-green-600' : 'text-red-600'}`}
+                        >
+                          ${row.utilidad.toLocaleString('es-CO')}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {viewType === 'global' && globalMonthRows.length === 0 && !loading && (
+        <p className="mt-4 text-sm text-slate-500 max-w-4xl">
+          No hay datos con fecha suficiente para armar el consolidado mensual. Las ventas usan la hora del registro; las
+          compras antiguas sin fecha pueden no aparecer.
+        </p>
+      )}
 
       {/* Chart Placeholder (Simplified for real data) */}
       <div className="mt-6">

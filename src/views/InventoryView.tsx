@@ -11,7 +11,8 @@ import {
   Square,
   Loader2,
   Edit2,
-  RefreshCw
+  RefreshCw,
+  X
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { db } from '../firebase';
@@ -31,6 +32,9 @@ export default function InventoryView() {
   const [editingEntry, setEditingEntry] = useState<PurchaseRecord | null>(null);
   const [firestoreError, setFirestoreError] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
+  const [showAllModal, setShowAllModal] = useState(false);
+  const [allEntries, setAllEntries] = useState<PurchaseRecord[]>([]);
+  const [allEntriesLoading, setAllEntriesLoading] = useState(false);
 
   useEffect(() => {
     const timeoutId = setTimeout(() => {
@@ -74,6 +78,24 @@ export default function InventoryView() {
       unsubProducts();
     };
   }, [retryCount]);
+
+  useEffect(() => {
+    if (!showAllModal) return;
+    setAllEntriesLoading(true);
+    const q = query(collection(db, 'purchases'), orderBy('timestamp', 'desc'), limit(500));
+    const unsub = onSnapshot(
+      q,
+      (snapshot) => {
+        setAllEntries(snapshot.docs.map((d) => ({ ...d.data(), id: d.id } as PurchaseRecord)));
+        setAllEntriesLoading(false);
+      },
+      (err) => {
+        console.error('Firestore purchases (all):', err);
+        setAllEntriesLoading(false);
+      }
+    );
+    return () => unsub();
+  }, [showAllModal]);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -291,7 +313,11 @@ export default function InventoryView() {
       <section className="mt-8 max-w-3xl">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-slate-900 text-lg md:text-xl font-bold">Entradas Recientes</h3>
-          <button className="text-primary text-sm font-semibold flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => setShowAllModal(true)}
+            className="text-primary text-sm font-semibold flex items-center gap-1"
+          >
             Ver Todo <ChevronRight size={14} />
           </button>
         </div>
@@ -330,6 +356,74 @@ export default function InventoryView() {
           </div>
         )}
       </section>
+
+      {showAllModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/50 p-0 md:p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="inventory-all-title"
+        >
+          <div className="bg-background-light md:bg-white w-full max-w-lg max-h-[85vh] md:rounded-2xl shadow-xl flex flex-col border-t md:border border-slate-200">
+            <div className="flex items-center justify-between p-4 border-b border-slate-200">
+              <h3 id="inventory-all-title" className="text-lg font-bold text-slate-900">
+                Todas las compras
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowAllModal(false)}
+                className="p-2 rounded-lg text-slate-500 hover:bg-slate-100"
+                aria-label="Cerrar"
+              >
+                <X size={22} />
+              </button>
+            </div>
+            <p className="px-4 pt-2 text-xs text-slate-500">
+              Toque editar para modificar un registro anterior. Hasta 500 entradas más recientes.
+            </p>
+            <div className="overflow-y-auto flex-1 p-4 space-y-2">
+              {allEntriesLoading ? (
+                <div className="flex justify-center py-12">
+                  <Loader2 className="animate-spin text-primary" size={32} />
+                </div>
+              ) : allEntries.length === 0 ? (
+                <p className="text-center text-slate-400 py-8">No hay compras registradas.</p>
+              ) : (
+                allEntries.map((entry) => (
+                  <div
+                    key={entry.id}
+                    className="flex items-center justify-between p-3 bg-white rounded-xl border border-slate-100 shadow-sm"
+                  >
+                    <div className="min-w-0 flex-1 pr-2">
+                      <p className="font-bold text-sm text-slate-900 truncate">{entry.name}</p>
+                      <p className="text-xs text-slate-500">
+                        {entry.date} · {entry.quantity} uds
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <div className="text-right">
+                        <p className="font-bold text-sm text-slate-900">
+                          ${entry.totalCost.toLocaleString('es-CO')}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          startEdit(entry);
+                          setShowAllModal(false);
+                        }}
+                        className="p-2 text-slate-400 hover:text-primary transition-colors"
+                      >
+                        <Edit2 size={16} />
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
