@@ -1,20 +1,43 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# 🛒 Tienda Escolar - Control de Ventas
 
-# Run and deploy your AI Studio app
+Aplicación web desarrollada para gestionar de manera sencilla el control financiero de una tienda escolar. Permite registrar productos, compras y ventas, facilitando el seguimiento diario del negocio.
 
-This contains everything you need to run your app locally.
+---
 
-View your app in AI Studio: https://ai.studio/apps/040a6681-cb26-4759-b6a7-ea930bfaa5ed
+## 🚀 Funcionalidades
 
-## Run Locally
+* 📦 Gestión de productos (crear, editar y consultar)
+* 💰 Registro de ventas
+* 🧾 Registro de compras
+* 📊 Control básico de ingresos y egresos
+* 🔄 Actualización en tiempo real mediante Firebase
+* 📱 Interfaz adaptable (uso en computador y dispositivos móviles)
 
-**Prerequisites:**  Node.js
+---
+
+## 🛠️ Tecnologías utilizadas
+
+* React + Vite
+* TypeScript
+* Firebase (Firestore)
+* Tailwind CSS
 
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+---
+
+## 🌐 Despliegue
+
+La aplicación puede desplegarse fácilmente en plataformas como Vercel.
+
+Cada vez que se actualiza el repositorio, el despliegue se realiza automáticamente.
+
+---
+
+## 🧠 Uso
+
+La aplicación está diseñada para llevar el control diario de una tienda escolar, permitiendo:
+
+* Registrar ventas rápidas
+* Controlar inventario básico
+* Analizar ingresos y egresos de forma simple
+
