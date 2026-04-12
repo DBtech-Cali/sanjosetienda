@@ -31,3 +31,11 @@ export interface SaleRecord {
   total: number;
   timestamp: any; // Firestore timestamp
 }
+
+export interface PastoralExpense {
+  id: string;
+  date: string;
+  description: string;
+  amount: number;
+  timestamp?: unknown;
+}

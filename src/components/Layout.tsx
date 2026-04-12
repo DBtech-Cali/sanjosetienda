@@ -6,7 +6,8 @@ import {
   Receipt,
   Settings, 
   User,
-  Plus
+  Plus,
+  HeartHandshake
 } from 'lucide-react';
 
 interface LayoutProps {
@@ -46,7 +47,7 @@ export default function Layout({
         </main>
 
         {/* Bottom Navigation */}
-        <nav className="fixed bottom-0 left-0 right-0 z-30 flex border-t border-slate-200/50 bg-white/90 px-2 pb-8 pt-2 backdrop-blur-xl max-w-md md:max-w-3xl lg:max-w-5xl mx-auto md:rounded-t-2xl md:border-x md:shadow-lg">
+        <nav className="fixed bottom-0 left-0 right-0 z-30 flex border-t border-slate-200/50 bg-white/90 px-1 pb-8 pt-2 backdrop-blur-xl max-w-md md:max-w-3xl lg:max-w-5xl mx-auto md:rounded-t-2xl md:border-x md:shadow-lg overflow-x-auto no-scrollbar">
           <button 
             onClick={() => setActiveTab('caja')}
             className={`flex flex-1 flex-col items-center justify-center gap-1 transition-colors ${activeTab === 'caja' ? 'text-primary' : 'text-slate-400'}`}
@@ -73,10 +74,18 @@ export default function Layout({
 
           <button 
             onClick={() => setActiveTab('reportes')}
-            className={`flex flex-1 flex-col items-center justify-center gap-1 transition-colors ${activeTab === 'reportes' ? 'text-primary' : 'text-slate-400'}`}
+            className={`flex flex-1 min-w-[3.5rem] flex-col items-center justify-center gap-1 transition-colors ${activeTab === 'reportes' ? 'text-primary' : 'text-slate-400'}`}
           >
             <BarChart3 size={22} fill={activeTab === 'reportes' ? 'currentColor' : 'none'} />
             <p className="text-[9px] font-bold uppercase tracking-tight">Reportes</p>
+          </button>
+
+          <button 
+            onClick={() => setActiveTab('pastoral')}
+            className={`flex flex-1 min-w-[3.5rem] flex-col items-center justify-center gap-1 transition-colors ${activeTab === 'pastoral' ? 'text-primary' : 'text-slate-400'}`}
+          >
+            <HeartHandshake size={22} fill={activeTab === 'pastoral' ? 'currentColor' : 'none'} />
+            <p className="text-[9px] font-bold uppercase tracking-tight">Pastoral</p>
           </button>
 
           <button 

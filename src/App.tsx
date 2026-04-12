@@ -5,8 +5,9 @@ import InventoryView from './views/InventoryView';
 import ReportsView from './views/ReportsView';
 import PricesView from './views/PricesView';
 import SalesView from './views/SalesView';
+import PastoralView from './views/PastoralView';
 
-type Tab = 'caja' | 'inventario' | 'reportes' | 'ventas' | 'ajustes';
+type Tab = 'caja' | 'inventario' | 'reportes' | 'pastoral' | 'ventas' | 'ajustes';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>('caja');
@@ -19,6 +20,8 @@ export default function App() {
         return <InventoryView />;
       case 'reportes':
         return <ReportsView />;
+      case 'pastoral':
+        return <PastoralView />;
       case 'ventas':
         return <SalesView />;
       case 'ajustes':
@@ -33,6 +36,7 @@ export default function App() {
       case 'caja': return 'Tienda San José';
       case 'inventario': return 'San José';
       case 'reportes': return 'Reporte de Utilidades';
+      case 'pastoral': return 'Pastoral';
       case 'ventas': return 'Registro de Ventas';
       case 'ajustes': return 'Gestión de Precios';
       default: return 'Tienda San José';

@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import { db } from '../firebase';
 import { collection, onSnapshot, query, where, Timestamp } from 'firebase/firestore';
-import { SaleRecord, PurchaseRecord } from '../types';
+import { SaleRecord, PurchaseRecord, PastoralExpense } from '../types';
 
 function recordToDate(ts: unknown): Date | null {
   if (ts == null) return null;
@@ -51,6 +51,7 @@ export default function ReportsView() {
   });
   const [sales, setSales] = useState<SaleRecord[]>([]);
   const [purchases, setPurchases] = useState<PurchaseRecord[]>([]);
+  const [pastoralExpenses, setPastoralExpenses] = useState<PastoralExpense[]>([]);
   const [loading, setLoading] = useState(true);
   const [firestoreError, setFirestoreError] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
@@ -124,9 +125,25 @@ export default function ReportsView() {
     };
   }, [viewType, selectedMonth, retryCount]);
 
+  useEffect(() => {
+    const unsub = onSnapshot(
+      collection(db, 'pastoral_expenses'),
+      (snapshot) => {
+        setPastoralExpenses(snapshot.docs.map((d) => ({ ...d.data(), id: d.id } as PastoralExpense)));
+      },
+      (err) => {
+        console.error('Firestore pastoral_expenses:', err);
+      }
+    );
+    return () => unsub();
+  }, [retryCount]);
+
   const totalSales = sales.reduce((sum, s) => sum + s.total, 0);
   const totalPurchases = purchases.reduce((sum, p) => sum + p.totalCost, 0);
-  const netUtility = totalSales - totalPurchases;
+  const totalPastoral = pastoralExpenses.reduce((sum, p) => sum + p.amount, 0);
+  const netUtilityBeforePastoral = totalSales - totalPurchases;
+  const netUtility =
+    viewType === 'global' ? netUtilityBeforePastoral - totalPastoral : netUtilityBeforePastoral;
 
   // Category stats
   const categoryStats = sales.reduce((acc: any, sale) => {
@@ -144,12 +161,12 @@ export default function ReportsView() {
 
   const globalMonthRows = useMemo(() => {
     if (viewType !== 'global') return [];
-    const map = new Map<string, { ventas: number; gastos: number }>();
+    const map = new Map<string, { ventas: number; gastos: number; pastoral: number }>();
     for (const s of sales) {
       const dk = saleDayKey(s);
       if (!dk) continue;
       const mk = dk.slice(0, 7);
-      const row = map.get(mk) ?? { ventas: 0, gastos: 0 };
+      const row = map.get(mk) ?? { ventas: 0, gastos: 0, pastoral: 0 };
       row.ventas += s.total;
       map.set(mk, row);
     }
@@ -157,8 +174,16 @@ export default function ReportsView() {
       const dk = purchaseDayKey(p);
       if (!dk) continue;
       const mk = dk.slice(0, 7);
-      const row = map.get(mk) ?? { ventas: 0, gastos: 0 };
+      const row = map.get(mk) ?? { ventas: 0, gastos: 0, pastoral: 0 };
       row.gastos += p.totalCost;
+      map.set(mk, row);
+    }
+    for (const pe of pastoralExpenses) {
+      const dk = typeof pe.date === 'string' && pe.date.length >= 7 ? pe.date.slice(0, 10) : null;
+      if (!dk) continue;
+      const mk = dk.slice(0, 7);
+      const row = map.get(mk) ?? { ventas: 0, gastos: 0, pastoral: 0 };
+      row.pastoral += pe.amount;
       map.set(mk, row);
     }
     return [...map.entries()]
@@ -166,23 +191,28 @@ export default function ReportsView() {
         monthKey,
         ventas: v.ventas,
         gastos: v.gastos,
-        utilidad: v.ventas - v.gastos,
+        pastoral: v.pastoral,
+        utilidad: v.ventas - v.gastos - v.pastoral,
       }))
       .sort((a, b) => b.monthKey.localeCompare(a.monthKey));
-  }, [viewType, sales, purchases]);
+  }, [viewType, sales, purchases, pastoralExpenses]);
 
   const globalDayStats = useMemo(() => {
     if (viewType !== 'global' || !globalPickDay) return null;
     let ventas = 0;
     let gastos = 0;
+    let pastoral = 0;
     for (const s of sales) {
       if (saleDayKey(s) === globalPickDay) ventas += s.total;
     }
     for (const p of purchases) {
       if (purchaseDayKey(p) === globalPickDay) gastos += p.totalCost;
     }
-    return { ventas, gastos, utilidad: ventas - gastos };
-  }, [viewType, globalPickDay, sales, purchases]);
+    for (const pe of pastoralExpenses) {
+      if (pe.date === globalPickDay) pastoral += pe.amount;
+    }
+    return { ventas, gastos, pastoral, utilidad: ventas - gastos - pastoral };
+  }, [viewType, globalPickDay, sales, purchases, pastoralExpenses]);
 
   const selectedMonthLabel =
     viewType === 'monthly'
@@ -281,7 +311,7 @@ export default function ReportsView() {
               className="max-w-xs px-3 py-2 rounded-lg border border-slate-200 bg-white shadow-sm focus:ring-2 focus:ring-primary text-sm font-medium"
             />
             {globalDayStats && (
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-2">
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-2">
                 <div className="rounded-lg bg-white border border-slate-100 p-3 shadow-sm">
                   <p className="text-[10px] font-bold uppercase text-slate-400">Ventas del día</p>
                   <p className="text-lg font-extrabold text-slate-900">
@@ -289,9 +319,15 @@ export default function ReportsView() {
                   </p>
                 </div>
                 <div className="rounded-lg bg-white border border-slate-100 p-3 shadow-sm">
-                  <p className="text-[10px] font-bold uppercase text-slate-400">Gastos del día</p>
+                  <p className="text-[10px] font-bold uppercase text-slate-400">Gastos insumos</p>
                   <p className="text-lg font-extrabold text-slate-900">
                     ${globalDayStats.gastos.toLocaleString('es-CO')}
+                  </p>
+                </div>
+                <div className="rounded-lg bg-white border border-slate-100 p-3 shadow-sm">
+                  <p className="text-[10px] font-bold uppercase text-slate-400">Pastoral día</p>
+                  <p className="text-lg font-extrabold text-slate-900">
+                    ${globalDayStats.pastoral.toLocaleString('es-CO')}
                   </p>
                 </div>
                 <div className="rounded-lg bg-white border border-slate-100 p-3 shadow-sm">
@@ -310,8 +346,8 @@ export default function ReportsView() {
 
       {/* Summary Cards */}
       <div className="flex flex-col gap-4 md:gap-5 max-w-4xl">
-        <div className="flex flex-col md:flex-row gap-4">
-          <div className="flex flex-1 flex-col gap-2 rounded-xl p-5 bg-white border border-primary/5 shadow-sm">
+        <div className="flex flex-col md:flex-row md:flex-wrap gap-4">
+          <div className="flex flex-1 min-w-[140px] flex-col gap-2 rounded-xl p-5 bg-white border border-primary/5 shadow-sm">
             <div className="flex items-center gap-2">
               <DollarSign size={18} className="text-primary" />
               <p className="text-slate-500 text-sm font-medium">Ventas Totales</p>
@@ -322,24 +358,44 @@ export default function ReportsView() {
               <p className="text-green-500 text-xs font-bold">Actualizado</p>
             </div>
           </div>
-          <div className="flex flex-1 flex-col gap-2 rounded-xl p-5 bg-white border border-primary/5 shadow-sm">
+          <div className="flex flex-1 min-w-[140px] flex-col gap-2 rounded-xl p-5 bg-white border border-primary/5 shadow-sm">
             <div className="flex items-center gap-2">
               <Package size={18} className="text-orange-400" />
-              <p className="text-slate-500 text-sm font-medium">Gastos</p>
+              <p className="text-slate-500 text-sm font-medium">Gastos (insumos)</p>
             </div>
             <p className="text-slate-900 tracking-tight text-xl font-extrabold">${totalPurchases.toLocaleString('es-CO')}</p>
             <div className="flex items-center gap-1">
               <TrendingDown size={14} className="text-red-500" />
-              <p className="text-red-500 text-xs font-bold">Insumos</p>
+              <p className="text-red-500 text-xs font-bold">Compras tienda</p>
             </div>
           </div>
+          {viewType === 'global' && (
+            <div className="flex flex-1 min-w-[140px] flex-col gap-2 rounded-xl p-5 bg-white border border-violet-200/80 shadow-sm">
+              <div className="flex items-center gap-2">
+                <TrendingDown size={18} className="text-violet-600" />
+                <p className="text-slate-500 text-sm font-medium">Gastos pastoral</p>
+              </div>
+              <p className="text-slate-900 tracking-tight text-xl font-extrabold">
+                ${totalPastoral.toLocaleString('es-CO')}
+              </p>
+              <p className="text-violet-600 text-xs font-bold">Pestaña Pastoral</p>
+            </div>
+          )}
         </div>
 
         <div className="flex w-full flex-col gap-2 rounded-xl p-6 bg-primary shadow-lg shadow-primary/20">
           <div className="flex justify-between items-center">
-            <p className="text-slate-900 text-sm font-bold uppercase tracking-wider opacity-80">Utilidad Neta</p>
+            <p className="text-slate-900 text-sm font-bold uppercase tracking-wider opacity-80">
+              {viewType === 'global' ? 'Utilidad neta (tras pastoral)' : 'Utilidad Neta'}
+            </p>
             <BarChart2 size={20} className="text-slate-900" />
           </div>
+          {viewType === 'global' && (
+            <p className="text-slate-800/90 text-xs font-medium">
+              Utilidad tienda (ventas − insumos): ${netUtilityBeforePastoral.toLocaleString('es-CO')} · Pastoral: −$
+              {totalPastoral.toLocaleString('es-CO')}
+            </p>
+          )}
           <div className="flex items-end gap-3">
             <p className="text-slate-900 tracking-tight text-3xl font-black">${netUtility.toLocaleString('es-CO')}</p>
             <p className="text-slate-900 text-sm font-bold mb-1 bg-white/30 px-2 py-0.5 rounded-full">
@@ -359,7 +415,8 @@ export default function ReportsView() {
                   <tr className="bg-slate-50 text-left text-slate-500 text-xs font-bold uppercase tracking-wide">
                     <th className="px-4 py-3">Mes</th>
                     <th className="px-4 py-3 text-right">Ventas</th>
-                    <th className="px-4 py-3 text-right">Gastos</th>
+                    <th className="px-4 py-3 text-right">Insumos</th>
+                    <th className="px-4 py-3 text-right">Pastoral</th>
                     <th className="px-4 py-3 text-right">Utilidad</th>
                   </tr>
                 </thead>
@@ -378,6 +435,9 @@ export default function ReportsView() {
                         </td>
                         <td className="px-4 py-3 text-right font-semibold text-slate-900">
                           ${row.gastos.toLocaleString('es-CO')}
+                        </td>
+                        <td className="px-4 py-3 text-right font-semibold text-violet-800">
+                          ${row.pastoral.toLocaleString('es-CO')}
                         </td>
                         <td
                           className={`px-4 py-3 text-right font-bold ${row.utilidad >= 0 ? 'text-green-600' : 'text-red-600'}`}

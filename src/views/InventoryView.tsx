@@ -7,14 +7,12 @@ import {
   PlusCircle,
   ChevronRight,
   PenLine,
-  Eraser,
-  Square,
+  PackageMinus,
   Loader2,
   Edit2,
   RefreshCw,
   X
 } from 'lucide-react';
-import { motion } from 'motion/react';
 import { db } from '../firebase';
 import { collection, onSnapshot, addDoc, serverTimestamp, query, orderBy, limit, doc, updateDoc, increment } from 'firebase/firestore';
 import { PurchaseRecord } from '../types';
@@ -35,6 +33,10 @@ export default function InventoryView() {
   const [showAllModal, setShowAllModal] = useState(false);
   const [allEntries, setAllEntries] = useState<PurchaseRecord[]>([]);
   const [allEntriesLoading, setAllEntriesLoading] = useState(false);
+  const [stockProductId, setStockProductId] = useState('');
+  const [stockWithdraw, setStockWithdraw] = useState(0);
+  const [stockPhysicalCount, setStockPhysicalCount] = useState('');
+  const [stockSubmitting, setStockSubmitting] = useState(false);
 
   useEffect(() => {
     const timeoutId = setTimeout(() => {
@@ -180,6 +182,45 @@ export default function InventoryView() {
 
   const totalCost = quantity * unitCost;
 
+  const selectedStockProduct = products.find((p) => p.id === stockProductId);
+  const stockOnHand = selectedStockProduct ? selectedStockProduct.stock ?? 0 : 0;
+
+  const handleStockAdjustment = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!stockProductId) return;
+    const physicalRaw = stockPhysicalCount.trim();
+    const physical =
+      physicalRaw === '' ? null : Number(physicalRaw);
+    if (physical !== null && (!Number.isFinite(physical) || physical < 0)) {
+      alert('Indique un conteo físico válido (número ≥ 0) o deje el campo vacío para solo dar de baja.');
+      return;
+    }
+    if (physical === null && stockWithdraw <= 0) {
+      alert('Indique unidades a dar de baja o use el conteo físico real.');
+      return;
+    }
+    setStockSubmitting(true);
+    try {
+      if (physical !== null) {
+        await updateDoc(doc(db, 'products', stockProductId), { stock: physical });
+      } else {
+        if (stockWithdraw > stockOnHand) {
+          alert(`No puede dar de baja más de lo disponible. Stock actual: ${stockOnHand}.`);
+          return;
+        }
+        await updateDoc(doc(db, 'products', stockProductId), {
+          stock: increment(-stockWithdraw),
+        });
+      }
+      setStockWithdraw(0);
+      setStockPhysicalCount('');
+    } catch (error) {
+      console.error('Error ajustando stock:', error);
+    } finally {
+      setStockSubmitting(false);
+    }
+  };
+
   if (firestoreError) {
     return (
       <div className="p-4 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 mx-4">
@@ -309,6 +350,90 @@ export default function InventoryView() {
           </button>
         </div>
       </form>
+
+      <section className="mt-10 max-w-3xl rounded-2xl border border-amber-200/80 bg-amber-50/50 p-4 md:p-6">
+        <div className="flex items-start gap-3 mb-4">
+          <div className="size-10 shrink-0 rounded-xl bg-amber-200/80 flex items-center justify-center text-amber-900">
+            <PackageMinus size={22} />
+          </div>
+          <div>
+            <h2 className="text-slate-900 text-lg font-bold">Baja de inventario (sin venta)</h2>
+            <p className="text-slate-600 text-sm mt-1">
+              Productos consumidos, regalados o vencidos no pasan por Caja: descuéntelos aquí o corrija el conteo físico.
+              No afecta el registro de ventas.
+            </p>
+          </div>
+        </div>
+        <form onSubmit={handleStockAdjustment} className="space-y-4">
+          <div className="flex flex-col w-full">
+            <label className="text-slate-700 text-sm font-semibold pb-1.5 ml-1">Producto</label>
+            <div className="relative">
+              <Tag className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
+              <select
+                className="block w-full pl-12 pr-4 py-3 rounded-xl border border-slate-200 bg-white shadow-sm focus:ring-2 focus:ring-primary text-base appearance-none cursor-pointer"
+                value={stockProductId}
+                onChange={(e) => setStockProductId(e.target.value)}
+              >
+                <option value="">Seleccione producto…</option>
+                {products.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} (Stock: {p.stock ?? 0})
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          {stockProductId && (
+            <p className="text-sm font-semibold text-slate-800">
+              Stock en sistema: <span className="text-primary">{stockOnHand}</span> uds
+            </p>
+          )}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="flex flex-col">
+              <label className="text-slate-700 text-sm font-semibold pb-1.5 ml-1">Unidades a dar de baja</label>
+              <div className="relative">
+                <Hash className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                <input
+                  className="block w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 bg-white shadow-sm focus:ring-2 focus:ring-primary text-base text-center font-bold"
+                  placeholder="0"
+                  type="number"
+                  min={0}
+                  value={stockWithdraw || ''}
+                  onChange={(e) => setStockWithdraw(Number(e.target.value))}
+                />
+              </div>
+              <p className="text-[11px] text-slate-500 mt-1 ml-1">Deje vacío el conteo si solo usa esta opción.</p>
+            </div>
+            <div className="flex flex-col">
+              <label className="text-slate-700 text-sm font-semibold pb-1.5 ml-1">
+                Conteo físico real (opcional)
+              </label>
+              <div className="relative">
+                <Hash className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                <input
+                  className="block w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 bg-white shadow-sm focus:ring-2 focus:ring-primary text-base text-center font-bold"
+                  placeholder="Ej. 12"
+                  type="number"
+                  min={0}
+                  value={stockPhysicalCount}
+                  onChange={(e) => setStockPhysicalCount(e.target.value)}
+                />
+              </div>
+              <p className="text-[11px] text-slate-500 mt-1 ml-1">
+                Si lo llena, el stock pasa a ese número (tiene prioridad sobre la baja).
+              </p>
+            </div>
+          </div>
+          <button
+            type="submit"
+            disabled={stockSubmitting || !stockProductId}
+            className="w-full bg-amber-600 hover:bg-amber-700 text-white font-bold py-3.5 rounded-xl transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+          >
+            {stockSubmitting ? <Loader2 className="animate-spin" size={20} /> : <PackageMinus size={20} />}
+            Aplicar ajuste de stock
+          </button>
+        </form>
+      </section>
 
       <section className="mt-8 max-w-3xl">
         <div className="flex items-center justify-between mb-4">
