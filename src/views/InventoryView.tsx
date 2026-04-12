@@ -17,6 +17,9 @@ import { db } from '../firebase';
 import { collection, onSnapshot, addDoc, serverTimestamp, query, orderBy, limit, doc, updateDoc, increment } from 'firebase/firestore';
 import { PurchaseRecord } from '../types';
 
+/** Contraseña para autorizar bajas de inventario (sin venta); solo personal autorizado. */
+const INVENTORY_ADJUSTMENT_PASSWORD = 'Obrero26';
+
 export default function InventoryView() {
   const [productId, setProductId] = useState('');
   const [name, setName] = useState('');
@@ -197,6 +200,13 @@ export default function InventoryView() {
     }
     if (physical === null && stockWithdraw <= 0) {
       alert('Indique unidades a dar de baja o use el conteo físico real.');
+      return;
+    }
+    const pwdInput = window.prompt(
+      'Solo el administrador puede aplicar bajas de inventario.\n\nContraseña:'
+    );
+    if (pwdInput?.trim() !== INVENTORY_ADJUSTMENT_PASSWORD) {
+      alert('Contraseña incorrecta o cancelada. El ajuste no se aplicó.');
       return;
     }
     setStockSubmitting(true);
